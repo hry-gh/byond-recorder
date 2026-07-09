@@ -12,9 +12,12 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("byond_recorder=info".parse()?))
-        .init();
+    let filter = if std::env::var("RUST_LOG").is_ok() {
+        EnvFilter::from_default_env()
+    } else {
+        EnvFilter::new("byond_recorder=info")
+    };
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let config = proxy::Config {
         listen_addr: "0.0.0.0:6060".parse()?,
