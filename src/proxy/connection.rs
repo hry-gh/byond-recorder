@@ -47,10 +47,10 @@ pub async fn handle(
                 if let ConnectionPhase::WaitingForClientHandshake = &phase {
                     if n >= 4 {
                         let payload = client_buf[4..n].to_vec();
+                        debug!("{}: client handshake raw ({} bytes): {:02x?}", client_addr, n, &client_buf[..n.min(64)]);
                         phase = ConnectionPhase::WaitingForServerHandshake {
                             client_handshake_payload: payload,
                         };
-                        debug!("{}: captured client handshake ({} bytes)", client_addr, n);
                     }
                 } else if let ConnectionPhase::Established = &phase {
                     client_frame_reader.push_data(&client_buf[..n]);
@@ -89,7 +89,7 @@ pub async fn handle(
                     ConnectionPhase::WaitingForServerHandshake { client_handshake_payload } => {
                         if n >= 4 {
                             let server_payload = server_buf[4..n].to_vec();
-                            debug!("{}: captured server handshake ({} bytes)", client_addr, n);
+                            debug!("{}: server handshake raw ({} bytes): {:02x?}", client_addr, n, &server_buf[..n.min(64)]);
 
                             match handshake::derive_cipher_key(client_handshake_payload, &server_payload) {
                                 Ok(result) => {
