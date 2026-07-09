@@ -97,8 +97,8 @@ pub async fn handle(
                                         "{}: handshake complete, BYOND version {}, cipher key derived",
                                         client_addr, result.client_version
                                     );
-                                    client_frame_reader.set_cipher(result.cipher.clone());
-                                    server_frame_reader.set_cipher(result.cipher);
+                                    client_frame_reader.set_cipher(result.cipher.clone(), true);
+                                    server_frame_reader.set_cipher(result.cipher, false);
                                     phase = ConnectionPhase::Established;
                                 }
                                 Err(e) => {

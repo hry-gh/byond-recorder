@@ -36,9 +36,9 @@ impl FrameReader {
         }
     }
 
-    pub fn set_cipher(&mut self, cipher: ByondCipher) {
+    pub fn set_cipher(&mut self, cipher: ByondCipher, sequenced: bool) {
         self.cipher = Some(cipher);
-        self.sequenced = true;
+        self.sequenced = sequenced;
     }
 
     pub fn push_data(&mut self, data: &[u8]) {
