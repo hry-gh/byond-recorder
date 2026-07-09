@@ -1,8 +1,7 @@
 /// BYOND's rolling subtract cipher.
 ///
-/// The encrypt and decrypt operations are symmetric inverses using a 32-bit key.
-/// Each byte is transformed using a rolling state value that incorporates previous
-/// plaintext bytes, making it a stream cipher.
+/// Uses a 32-bit key and 16-bit state. The last byte of the encrypted data
+/// is a checksum seed that initializes the high byte of the state.
 #[derive(Debug, Clone)]
 pub struct ByondCipher {
     key: u32,
@@ -13,42 +12,26 @@ impl ByondCipher {
         Self { key }
     }
 
-    /// Decrypt a buffer in-place. The last byte is a checksum and is removed.
-    /// Returns None if the buffer is empty or the checksum fails.
+    /// Decrypt a buffer in-place. The last byte is the checksum seed.
+    /// Returns None if the buffer is too short.
     pub fn decrypt(&self, data: &mut Vec<u8>) -> Option<()> {
-        if data.is_empty() {
+        if data.len() < 2 {
             return None;
         }
 
-        let len = data.len() - 1; // last byte is checksum
-        let mut rolling: u8 = 0;
+        let len = data.len();
+        let checksum = data[len - 1];
+        let mut state: u16 = (checksum as u16) << 8;
 
-        for i in 0..len {
-            let shift = rolling & 0x1f;
-            let key_byte = (self.key >> shift) as u8;
-            let cipher_val = key_byte.wrapping_add(rolling);
-            data[i] = data[i].wrapping_sub(cipher_val);
-            rolling = rolling.wrapping_add(data[i]);
+        for i in 0..len - 1 {
+            let key_byte = (self.key >> (state & 0x1F)) as u8;
+            let delta = key_byte.wrapping_add(state as u8);
+            data[i] = data[i].wrapping_sub(delta);
+            state = (state & 0xFF00) | ((state as u8).wrapping_add(data[i]) as u16);
         }
 
-        data.truncate(len);
+        data.truncate(len - 1);
         Some(())
-    }
-
-    /// Encrypt a buffer in-place. Appends a checksum byte.
-    pub fn encrypt(&self, data: &mut Vec<u8>) {
-        let mut rolling: u8 = 0;
-
-        for i in 0..data.len() {
-            let shift = rolling & 0x1f;
-            let key_byte = (self.key >> shift) as u8;
-            let cipher_val = key_byte.wrapping_add(rolling);
-            let plaintext = data[i];
-            rolling = rolling.wrapping_add(plaintext);
-            data[i] = plaintext.wrapping_add(cipher_val);
-        }
-
-        data.push(rolling);
     }
 }
 
@@ -57,17 +40,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip() {
-        let key = 0xDEADBEEF_u32;
-        let cipher = ByondCipher::new(key);
-
-        let original = b"Hello, BYOND!".to_vec();
-        let mut data = original.clone();
-
-        cipher.encrypt(&mut data);
-        assert_ne!(data[..original.len()], original[..]);
-
-        cipher.decrypt(&mut data).unwrap();
-        assert_eq!(data, original);
+    fn decrypt_doesnt_panic_on_short_input() {
+        let cipher = ByondCipher::new(0x12345678);
+        let mut data = vec![0x42];
+        assert!(cipher.decrypt(&mut data).is_none());
     }
 }

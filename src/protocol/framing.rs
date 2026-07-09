@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt};
 use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
 use tracing::{debug, trace};
@@ -15,10 +15,12 @@ pub struct RawMessage {
 
 /// Reads BYOND messages from a TCP byte stream.
 ///
-/// After the handshake, BYOND uses sequenced mode where each frame is:
-///   [u16 BE: seq] [u16 BE: type] [u16 BE: len] [payload: len bytes]
+/// Post-handshake frames are always:
+///   [u16 BE: seq] [u16 BE: type] [u16 BE: len] [payload: len bytes, encrypted]
 ///
-/// Also handles extended messages (type 0xA0) and compressed batches (type 0xE4).
+/// Compressed batches (type 0xE4) contain:
+///   [u32 LE: uncompressed_len] [zlib data]
+/// And decompress to a sequence of unsequenced, unencrypted 4-byte-header messages.
 pub struct FrameReader {
     buffer: Vec<u8>,
     cipher: Option<ByondCipher>,
@@ -70,6 +72,10 @@ impl FrameReader {
                 (msg_type, payload_len)
             };
 
+            if msg_type >= 0x400 {
+                bail!("invalid message type {:#06x} — likely parser misalignment", msg_type);
+            }
+
             let total_len = header_size + payload_len;
             if self.buffer.len() < total_len {
                 return Ok(());
@@ -109,13 +115,21 @@ impl FrameReader {
                         debug!(have = remaining.len(), need = real_len, "extended message incomplete, skipping");
                     }
                 }
-                0xE4 => {
-                    debug!(compressed_len = payload.len(), "decompressing batch");
-                    let mut decoder = ZlibDecoder::new(&payload[..]);
+                0xA1 | 0xE4 => {
+                    // Compressed data: [u32 LE: uncompressed_len] [zlib data]
+                    if payload.len() < 4 {
+                        bail!("compressed message too short: {} bytes", payload.len());
+                    }
+                    let mut cur = Cursor::new(&payload[..4]);
+                    let _uncompressed_len = cur.read_u32::<LittleEndian>()?;
+
+                    debug!(compressed_len = payload.len() - 4, uncompressed_len = _uncompressed_len, "decompressing batch");
+                    let mut decoder = ZlibDecoder::new(&payload[4..]);
                     let mut decompressed = Vec::new();
                     decoder.read_to_end(&mut decompressed)?;
                     debug!(decompressed_len = decompressed.len(), "batch decompressed");
 
+                    // Decompressed data contains unsequenced, unencrypted messages
                     let mut sub_reader = FrameReader::new();
                     sub_reader.push_data(&decompressed);
                     sub_reader.read_messages_inner(out)?;
