@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 
 use super::cipher::ByondCipher;
@@ -27,9 +27,9 @@ pub fn derive_cipher_key(client_handshake: &[u8], server_handshake: &[u8]) -> Re
     }
 
     let mut c = Cursor::new(client_handshake);
-    let client_version = c.read_u32::<BigEndian>()?;
-    let client_random = c.read_u32::<BigEndian>()?;
-    let client_key = c.read_u32::<BigEndian>()?;
+    let client_version = c.read_u32::<LittleEndian>()?;
+    let client_random = c.read_u32::<LittleEndian>()?;
+    let client_key = c.read_u32::<LittleEndian>()?;
 
     // Server response has variable length depending on version.
     // We need to extract the random values the server appends.
@@ -44,8 +44,8 @@ pub fn derive_cipher_key(client_handshake: &[u8], server_handshake: &[u8]) -> Re
     }
 
     let mut s = Cursor::new(server_handshake);
-    let _server_version = s.read_u32::<BigEndian>()?;
-    let _min_version = s.read_u32::<BigEndian>()?;
+    let _server_version = s.read_u32::<LittleEndian>()?;
+    let _min_version = s.read_u32::<LittleEndian>()?;
     let _flags1 = s.read_u8()?;
     let _flags2 = s.read_u8()?;
     let _flags3 = s.read_u8()?;
@@ -54,8 +54,8 @@ pub fn derive_cipher_key(client_handshake: &[u8], server_handshake: &[u8]) -> Re
     // the last random before the final checksum random.
     // This needs empirical validation against real handshakes.
     // TODO: verify exact byte offsets with packet captures
-    let _server_random1 = s.read_u32::<BigEndian>()?;
-    let server_key_add = s.read_u32::<BigEndian>()?;
+    let _server_random1 = s.read_u32::<LittleEndian>()?;
+    let server_key_add = s.read_u32::<LittleEndian>()?;
 
     let key = client_key
         .wrapping_add(client_random.wrapping_mul(0x10000))
