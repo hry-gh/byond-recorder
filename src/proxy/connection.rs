@@ -55,16 +55,23 @@ pub async fn handle(
                 } else if let ConnectionPhase::Established = &phase {
                     client_frame_reader.push_data(&client_buf[..n]);
 
-                    if let Ok(msgs) = client_frame_reader.read_messages() {
-                        for msg in &msgs {
-                            if msg.msg_type == messages::MSG_KEY && !msg.payload.is_empty() {
-                                let key = extract_null_terminated_string(&msg.payload);
-                                if !key.is_empty() && key != "-" {
-                                    let ckey = byond_key_to_ckey(&key);
-                                    info!("{}: identified player key: {} (ckey: {})", client_addr, key, ckey);
-                                    session_id = Some(ckey);
+                    match client_frame_reader.read_messages() {
+                        Ok(msgs) => {
+                            for msg in &msgs {
+                                debug!("{}: client msg type={} len={}", client_addr, msg.msg_type, msg.payload.len());
+                                if msg.msg_type == messages::MSG_KEY && !msg.payload.is_empty() {
+                                    let key = extract_null_terminated_string(&msg.payload);
+                                    debug!("{}: raw key string: {:?}", client_addr, key);
+                                    if !key.is_empty() && key != "-" {
+                                        let ckey = byond_key_to_ckey(&key);
+                                        info!("{}: identified player key: {} (ckey: {})", client_addr, key, ckey);
+                                        session_id = Some(ckey);
+                                    }
                                 }
                             }
+                        }
+                        Err(e) => {
+                            warn!("{}: client frame parse error: {:#}", client_addr, e);
                         }
                     }
                 }
@@ -106,6 +113,12 @@ pub async fn handle(
 
                         match server_frame_reader.read_messages() {
                             Ok(raw_messages) => {
+                                if !raw_messages.is_empty() {
+                                    debug!(
+                                        "{}: parsed {} server messages from {} bytes",
+                                        client_addr, raw_messages.len(), n
+                                    );
+                                }
                                 for msg in &raw_messages {
                                     if !session_started {
                                         if let Some(ref ckey) = session_id {

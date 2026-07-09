@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use byteorder::{BigEndian, ReadBytesExt};
 use flate2::read::ZlibDecoder;
 use std::io::{Cursor, Read};
+use tracing::{debug, trace};
 
 use super::cipher::ByondCipher;
 
@@ -14,11 +15,14 @@ pub struct RawMessage {
 
 /// Reads BYOND messages from a TCP byte stream.
 ///
-/// Handles the [u16 type][u16 length][payload] framing, extended messages
-/// (type 0xA0 with u32 length), and compressed batches (type 0xE4).
+/// After the handshake, BYOND uses sequenced mode where each frame is:
+///   [u16 BE: seq] [u16 BE: type] [u16 BE: len] [payload: len bytes]
+///
+/// Also handles extended messages (type 0xA0) and compressed batches (type 0xE4).
 pub struct FrameReader {
     buffer: Vec<u8>,
     cipher: Option<ByondCipher>,
+    sequenced: bool,
 }
 
 impl FrameReader {
@@ -26,20 +30,19 @@ impl FrameReader {
         Self {
             buffer: Vec::with_capacity(65536),
             cipher: None,
+            sequenced: false,
         }
     }
 
     pub fn set_cipher(&mut self, cipher: ByondCipher) {
         self.cipher = Some(cipher);
+        self.sequenced = true;
     }
 
     pub fn push_data(&mut self, data: &[u8]) {
         self.buffer.extend_from_slice(data);
     }
 
-    /// Try to parse one or more complete messages from the buffer.
-    /// Returns all messages that can be fully parsed, leaving incomplete
-    /// data in the buffer for the next call.
     pub fn read_messages(&mut self) -> Result<Vec<RawMessage>> {
         let mut messages = Vec::new();
         self.read_messages_inner(&mut messages)?;
@@ -48,21 +51,34 @@ impl FrameReader {
 
     fn read_messages_inner(&mut self, out: &mut Vec<RawMessage>) -> Result<()> {
         loop {
-            if self.buffer.len() < 4 {
+            let header_size = if self.sequenced { 6 } else { 4 };
+
+            if self.buffer.len() < header_size {
                 return Ok(());
             }
 
-            let mut header = Cursor::new(&self.buffer[..4]);
-            let msg_type = header.read_u16::<BigEndian>()?;
-            let payload_len = header.read_u16::<BigEndian>()? as usize;
+            let (msg_type, payload_len) = if self.sequenced {
+                let mut header = Cursor::new(&self.buffer[..6]);
+                let _seq = header.read_u16::<BigEndian>()?;
+                let msg_type = header.read_u16::<BigEndian>()?;
+                let payload_len = header.read_u16::<BigEndian>()? as usize;
+                (msg_type, payload_len)
+            } else {
+                let mut header = Cursor::new(&self.buffer[..4]);
+                let msg_type = header.read_u16::<BigEndian>()?;
+                let payload_len = header.read_u16::<BigEndian>()? as usize;
+                (msg_type, payload_len)
+            };
 
-            let total_len = 4 + payload_len;
+            let total_len = header_size + payload_len;
             if self.buffer.len() < total_len {
                 return Ok(());
             }
 
-            let mut payload = self.buffer[4..total_len].to_vec();
+            let mut payload = self.buffer[header_size..total_len].to_vec();
             self.buffer.drain(..total_len);
+
+            trace!(msg_type = msg_type, payload_len = payload.len(), sequenced = self.sequenced, "raw frame");
 
             if let Some(ref cipher) = self.cipher {
                 cipher.decrypt(&mut payload);
@@ -70,41 +86,42 @@ impl FrameReader {
 
             match msg_type {
                 0xA0 => {
-                    // Extended message: payload contains [u16 real_type][u32 real_length][data]
                     if payload.len() < 6 {
-                        bail!("extended message too short");
+                        bail!("extended message too short: {} bytes", payload.len());
                     }
                     let mut cur = Cursor::new(&payload);
                     let real_type = cur.read_u16::<BigEndian>()?;
                     let real_len = cur.read_u32::<BigEndian>()? as usize;
 
+                    debug!(real_type = real_type, real_len = real_len, "extended message");
+
                     if real_len > 0x00FFFFFF {
                         bail!("extended message too large: {}", real_len);
                     }
 
-                    // The remaining data may need to be accumulated across multiple
-                    // packets (state 2 in ReadPacket). For now, handle the simple case
-                    // where everything arrived.
                     let remaining = &payload[6..];
                     if remaining.len() >= real_len {
                         out.push(RawMessage {
                             msg_type: real_type,
                             payload: remaining[..real_len].to_vec(),
                         });
+                    } else {
+                        debug!(have = remaining.len(), need = real_len, "extended message incomplete, skipping");
                     }
                 }
                 0xE4 => {
-                    // Compressed batch: decompress and re-parse
+                    debug!(compressed_len = payload.len(), "decompressing batch");
                     let mut decoder = ZlibDecoder::new(&payload[..]);
                     let mut decompressed = Vec::new();
                     decoder.read_to_end(&mut decompressed)?;
+                    debug!(decompressed_len = decompressed.len(), "batch decompressed");
 
                     let mut sub_reader = FrameReader::new();
-                    // Compressed batches contain unencrypted messages
                     sub_reader.push_data(&decompressed);
                     sub_reader.read_messages_inner(out)?;
                 }
                 _ => {
+                    debug!(msg_type = msg_type, payload_len = payload.len(), "message");
                     out.push(RawMessage {
                         msg_type,
                         payload,
