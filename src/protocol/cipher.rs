@@ -31,20 +31,8 @@ impl ByondCipher {
             rolling = rolling.wrapping_add(data[i]);
         }
 
-        let expected_checksum = rolling;
-        let actual_checksum = data[len];
         data.truncate(len);
-
-        if expected_checksum == (actual_checksum >> 8) as u8 {
-            // checksum is stored as the high byte of the rolling state
-            Some(())
-        } else {
-            // checksum validation is loose - the original code just compares
-            // (char)uVar6 == (char)((ushort)uVar6 >> 8) which checks if the
-            // low byte equals the high byte of the final 16-bit rolling state.
-            // For now, accept all - BYOND doesn't reject on checksum failure either.
-            Some(())
-        }
+        Some(())
     }
 
     /// Encrypt a buffer in-place. Appends a checksum byte.

@@ -60,7 +60,6 @@ impl RoundRecorder {
     }
 
     fn load_icon_map(game_dir: &Path) -> Result<HashMap<u32, String>> {
-        let rsc_candidates = ["*.rsc"];
         let mut rsc_path = None;
 
         for entry in fs::read_dir(game_dir)? {

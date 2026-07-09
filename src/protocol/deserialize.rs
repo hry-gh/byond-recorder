@@ -68,11 +68,7 @@ impl<'a> DataReader<'a> {
         }
         let len = len as usize;
         if self.remaining() < len {
-            bail!(
-                "string length {} exceeds remaining {}",
-                len,
-                self.remaining()
-            );
+            bail!("string length {} exceeds remaining {}", len, self.remaining());
         }
         let pos = self.cur.position() as usize;
         let bytes = &self.cur.get_ref()[pos..pos + len];
@@ -102,8 +98,7 @@ impl<'a> DataReader<'a> {
 
     fn skip(&mut self, n: usize) {
         let pos = self.cur.position() as usize;
-        self.cur
-            .set_position((pos + n).min(self.cur.get_ref().len()) as u64);
+        self.cur.set_position((pos + n).min(self.cur.get_ref().len()) as u64);
     }
 }
 
@@ -127,11 +122,7 @@ pub fn deserialize_message(
             let maxx = dp.read_u16()?;
             let maxy = dp.read_u16()?;
             let maxz = dp.read_u16()?;
-            events.push(DeserializedEvent::Frame(Frame::MapResize {
-                maxx,
-                maxy,
-                maxz,
-            }));
+            events.push(DeserializedEvent::Frame(Frame::MapResize { maxx, maxy, maxz }));
         }
         MSG_ICON => {
             let icon = parse_icon_meta(&mut dp)?;
@@ -387,12 +378,7 @@ fn parse_turf_block(dp: &mut DataReader, maxx: u16, maxy: u16) -> Result<Vec<Tur
     let mut turf_order = Vec::new();
     for y in new_y..new_y + new_height {
         for x in new_x..new_x + new_width {
-            if old_id == 0
-                || x < old_x
-                || x >= old_x + old_width
-                || y < old_y
-                || y >= old_y + old_height
-            {
+            if old_id == 0 || x < old_x || x >= old_x + old_width || y < old_y || y >= old_y + old_height {
                 turf_order.push((x, y, z));
             }
         }
@@ -466,7 +452,7 @@ fn parse_movable_entry(dp: &mut DataReader, flags: u16) -> Result<Option<Movable
 
     if flags & 4 != 0 {
         let loc = dp.read_u32()?;
-        let (x, y, z) = turf_id_to_xyz(loc, 255, 255); // approximate - we may not know maxx here
+        let (x, y, z) = turf_id_to_xyz(loc, 255, 255); // approximate — we may not know maxx here
         entry.location = Some((x, y, z));
         entry.flags |= UPD_LOCATION;
     }
@@ -509,17 +495,12 @@ fn parse_movable_entry(dp: &mut DataReader, flags: u16) -> Result<Option<Movable
     Ok(Some(entry))
 }
 
-fn parse_movable_eye(
-    dp: &mut DataReader,
-) -> Result<(Option<EyeUpdate>, Vec<MovableEntry>, Vec<u32>)> {
+fn parse_movable_eye(dp: &mut DataReader) -> Result<(Option<EyeUpdate>, Vec<MovableEntry>, Vec<u32>)> {
     let flags = dp.read_u8()?;
     let mut eye = None;
 
     if flags & 0x02 != 0 {
-        dp.read_i16()?;
-        dp.read_i16()?;
-        dp.read_i16()?;
-        dp.read_i16()?;
+        dp.read_i16()?; dp.read_i16()?; dp.read_i16()?; dp.read_i16()?;
         dp.read_u8()?;
         let eye_bits = dp.read_u32()?;
         let _glide_size = dp.read_f32()?;
@@ -542,18 +523,12 @@ fn parse_movable_eye(
         sight = dp.read_u8()? as u32;
     }
     if flags & 0x40 != 0 {
-        // read_value - skip a typed value
+        // read_value — skip a typed value
         let vtype = dp.read_u8()?;
         match vtype {
-            0x2A => {
-                dp.read_f32()?;
-            }
-            0x06 => {
-                dp.read_u32as16()?;
-            }
-            _ => {
-                dp.read_u32()?;
-            }
+            0x2A => { dp.read_f32()?; }
+            0x06 => { dp.read_u32as16()?; }
+            _ => { dp.read_u32()?; }
         }
     }
     if flags & 0x80 != 0 {
@@ -568,20 +543,13 @@ fn parse_movable_eye(
             sight = dp.read_u32()?;
         }
         if flags2 & 8 != 0 {
-            dp.read_i16()?;
-            dp.read_i16()?;
-            dp.read_i16()?;
-            dp.read_i16()?;
+            dp.read_i16()?; dp.read_i16()?; dp.read_i16()?; dp.read_i16()?;
         }
         if flags2 & 0x10 != 0 {
-            dp.read_i16()?;
-            dp.read_i16()?;
+            dp.read_i16()?; dp.read_i16()?;
         }
         if flags2 & 0x20 != 0 {
-            dp.read_i16()?;
-            dp.read_i16()?;
-            dp.read_i16()?;
-            dp.read_i16()?;
+            dp.read_i16()?; dp.read_i16()?; dp.read_i16()?; dp.read_i16()?;
         }
     }
 
@@ -599,10 +567,7 @@ fn parse_movable_changes_screen(dp: &mut DataReader) -> Result<(Vec<MovableEntry
     parse_movable_changes(dp, true)
 }
 
-fn parse_movable_changes(
-    dp: &mut DataReader,
-    is_screen: bool,
-) -> Result<(Vec<MovableEntry>, Vec<u32>)> {
+fn parse_movable_changes(dp: &mut DataReader, is_screen: bool) -> Result<(Vec<MovableEntry>, Vec<u32>)> {
     if dp.reached_end() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -624,7 +589,7 @@ fn parse_movable_changes(
             continue;
         }
 
-        // Skip the "reset" flag (flags & 3 == 1) - not relevant for recording
+        // Skip the "reset" flag (flags & 3 == 1) — not relevant for recording
 
         match parse_movable_entry_from_flags(dp, atom_id, flags)? {
             Some(entry) => movables.push(entry),
@@ -635,11 +600,7 @@ fn parse_movable_changes(
     Ok((movables, deletes))
 }
 
-fn parse_movable_entry_from_flags(
-    dp: &mut DataReader,
-    atom_id: u32,
-    flags: u16,
-) -> Result<Option<MovableEntry>> {
+fn parse_movable_entry_from_flags(dp: &mut DataReader, atom_id: u32, flags: u16) -> Result<Option<MovableEntry>> {
     let mut entry = MovableEntry {
         atom_id,
         flags: 0,
@@ -660,25 +621,16 @@ fn parse_movable_entry_from_flags(
         entry.flags |= UPD_APPEARANCE;
     }
     if flags & 16 != 0 {
-        entry.pixel = Some((
-            dp.read_i16()?,
-            dp.read_i16()?,
-            dp.read_i16()?,
-            dp.read_i16()?,
-        ));
+        entry.pixel = Some((dp.read_i16()?, dp.read_i16()?, dp.read_i16()?, dp.read_i16()?));
         entry.flags |= UPD_PIXEL;
     }
     if flags & 32 != 0 {
-        dp.read_i16()?;
-        dp.read_i16()?;
+        dp.read_i16()?; dp.read_i16()?;
         entry.glide_size = Some(dp.read_f32()?);
         entry.flags |= UPD_GLIDE;
     }
     if flags & 64 != 0 {
-        dp.read_i16()?;
-        dp.read_i16()?;
-        dp.read_u16()?;
-        dp.read_u16()?;
+        dp.read_i16()?; dp.read_i16()?; dp.read_u16()?; dp.read_u16()?;
     }
     if flags & 128 != 0 {
         dp.read_u8()?;
