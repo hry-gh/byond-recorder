@@ -59,9 +59,9 @@ pub async fn handle(
                         Ok(msgs) => {
                             for msg in &msgs {
                                 debug!("{}: client msg type={} len={}", client_addr, msg.msg_type, msg.payload.len());
-                                if msg.msg_type == messages::MSG_KEY && !msg.payload.is_empty() {
+                                if msg.msg_type == messages::MSG_KEY {
+                                    debug!("{}: msg 26 payload ({} bytes): {:02x?}", client_addr, msg.payload.len(), &msg.payload[..msg.payload.len().min(80)]);
                                     let key = extract_null_terminated_string(&msg.payload);
-                                    debug!("{}: raw key string: {:?}", client_addr, key);
                                     if !key.is_empty() && key != "-" {
                                         let ckey = byond_key_to_ckey(&key);
                                         info!("{}: identified player key: {} (ckey: {})", client_addr, key, ckey);
